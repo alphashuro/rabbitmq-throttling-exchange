@@ -74,9 +74,9 @@ route(#exchange{name = XName}, Delivery) ->
   Headers = rabbit_basic:extract_headers(Content),
   %Get Last sent from Db
   [RoutingKey|_] = BasicMessage#basic_message.routing_keys,
-  ToExchange = extract_header(Headers, <<"to_exchange">>, <<>>),
-  LastTime = get_msgs_from_cache(ToExchange),
-  MsgPerSecondStr = extract_header(Headers, <<"messages_per_second">>, <<"0">>),
+  ToExchange = extract_header(Headers, <<"to-exchange">>, <<>>),
+  LastTime = get_msgs_from_cache(RoutingKey),
+  MsgPerSecondStr = extract_header(Headers, <<"messages-per-second">>, <<"0">>),
   if 
      %First sent or not frame rate
      LastTime == [] orelse MsgPerSecondStr == <<"0">> ->
@@ -92,8 +92,8 @@ route(#exchange{name = XName}, Delivery) ->
           true -> TimeToNextSent = round(ValueTmp)
         end
   end,
-  %% TODO may I also store by routing key?
-  cache_msg(ToExchange, current_time_ms() + TimeToNextSent),
+  %% Cache by routing key, so that each routing key is throttled seperately
+  cache_msg(RoutingKey, current_time_ms() + TimeToNextSent),
   {Ok, Msg} = rabbit_basic:message({resource,<<"/">>, exchange, ToExchange}, RoutingKey, Content),
   NewDelivery = build_delivery(Delivery, Msg),
   Pid = spawn(fun () -> deliver_message(TimeToNextSent, NewDelivery) end),
@@ -164,13 +164,13 @@ cache_msg(Key, Timestamp) ->
         end
     end).
 
-get_msgs_from_cache(XName) ->
+get_msgs_from_cache(Key) ->
   rabbit_misc:execute_mnesia_transaction(
     fun () ->
-      case mnesia:read(?RH_TABLE, XName) of
+      case mnesia:read(?RH_TABLE, Key) of
         [] ->
           [];
-        [#lastSent{key = XName, timestamp=LastSent}] ->
+        [#lastSent{key = Key, timestamp=LastSent}] ->
           LastSent
       end
     end).
